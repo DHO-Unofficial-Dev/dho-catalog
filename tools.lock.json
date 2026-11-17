@@ -1,0 +1,27 @@
+{
+  "toolVersion": "v2.2.0",
+  "tools": {
+    "module": {
+      "fileName": "dho-module-node-tools.zip",
+      "url": "https://github.com/DHO-Unofficial-Dev/DHO-Manager/releases/download/v2.2.0/dho-module-node-tools.zip",
+      "bytes": 752138,
+      "sha256": "9564513cd4165821ed814f6f81582fb587589290f6d193a7374dbfb31430e8d4"
+    },
+    "pack": {
+      "fileName": "dho-pack-node-tools.zip",
+      "url": "https://github.com/DHO-Unofficial-Dev/DHO-Manager/releases/download/v2.2.0/dho-pack-node-tools.zip",
+      "bytes": 912618,
+      "sha256": "9de5ed111d273e9df631755da3fc16bd650533578af0a79422b5dc45bb50b708"
+    }
+  },
+  "advancedCapabilities": [
+    "files.user",
+    "network.session",
+    "network.stream",
+    "service.background",
+    "sidecar.execute",
+    "sidecar.resident",
+    "vision.captureRegion",
+    "vision.readText"
+  ]
+}

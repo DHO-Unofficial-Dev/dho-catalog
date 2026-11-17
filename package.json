@@ -1,0 +1,13 @@
+{
+  "name": "dho-catalog",
+  "private": true,
+  "type": "module",
+  "description": "DHO Navigator Catalog 등재 저장소의 검사·생성 스크립트",
+  "engines": {
+    "node": ">=20.11.1"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint:items": "node scripts/lint-items.mjs"
+  }
+}

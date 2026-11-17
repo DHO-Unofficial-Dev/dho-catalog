@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DHO-Unofficial-Dev/dho-catalog/schema/item-v1.schema.json",
+  "title": "DHO Catalog 항목 item.json v1",
+  "description": "items/<kind>s/<id>/item.json. 등재자는 표시 정보와 Release 주소를 쓰고, download.bytes·download.sha256·registration은 등재 workflow만 기록한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "id", "name", "summary", "publisher", "repository", "license", "advanced", "versions"],
+  "properties": {
+    "kind": { "enum": ["module", "pack"] },
+    "id": { "$ref": "#/$defs/id" },
+    "name": { "$ref": "#/$defs/display40" },
+    "summary": { "$ref": "#/$defs/display80" },
+    "publisher": { "$ref": "#/$defs/publisher" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "license": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "advanced": { "$ref": "#/$defs/advanced" },
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/version" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "display40": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "display80": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "semver": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "isoTime": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "httpsUrl": { "type": "string", "maxLength": 2048, "pattern": "^https://[^\\s\\u0000-\\u001F\\u007F]+$" },
+    "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}$" },
+    "capability": { "type": "string", "maxLength": 64, "pattern": "^[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)+$" },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "name": { "$ref": "#/$defs/display40" },
+        "url": { "$ref": "#/$defs/httpsUrl" }
+      }
+    },
+    "advanced": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["explanation"],
+          "properties": {
+            "explanation": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$" }
+          }
+        }
+      ]
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumManagerVersion"],
+      "properties": {
+        "minimumManagerVersion": { "$ref": "#/$defs/semver" },
+        "maximumManagerVersionExclusive": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolVersion", "runId", "at"],
+      "properties": {
+        "toolVersion": { "type": "string", "pattern": "^[A-Za-z0-9._+-]{1,64}$" },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "at": { "$ref": "#/$defs/isoTime" }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "releasedAt", "compatibility", "capabilities", "download"],
+      "properties": {
+        "version": { "$ref": "#/$defs/semver" },
+        "releasedAt": { "$ref": "#/$defs/isoTime" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
+        "capabilities": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/capability" } },
+        "download": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "fileName"],
+          "properties": {
+            "url": { "$ref": "#/$defs/httpsUrl" },
+            "fileName": { "type": "string", "maxLength": 200 },
+            "bytes": { "type": "integer", "minimum": 1, "maximum": 134217728 },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "registration": { "$ref": "#/$defs/registration" }
+      }
+    }
+  }
+}
