@@ -1,0 +1,29 @@
+{
+  "kind": "pack",
+  "id": "community.dhoport.haewio",
+  "name": "해위오 에디션",
+  "summary": "짙은 갈색 바탕에 주황 포인트로 본창·HUD·지도·표식·앱 아이콘을 바꾸는 리소스팩입니다.",
+  "publisher": {
+    "id": "community.dhoport",
+    "name": "DHO PORT",
+    "url": "https://dhoport.app"
+  },
+  "repository": "DHO-Unofficial-Dev/dho-pack-haewio",
+  "license": "CC-BY-4.0",
+  "advanced": null,
+  "versions": [
+    {
+      "version": "2.0.0",
+      "releasedAt": "2026-11-17T11:31:49Z",
+      "compatibility": {
+        "minimumManagerVersion": "2.2.0",
+        "maximumManagerVersionExclusive": "3.0.0"
+      },
+      "capabilities": [],
+      "download": {
+        "url": "https://github.com/DHO-Unofficial-Dev/dho-pack-haewio/releases/download/v2.0.0/haewio-2.0.0.dho-pack",
+        "fileName": "haewio-2.0.0.dho-pack"
+      }
+    }
+  ]
+}
