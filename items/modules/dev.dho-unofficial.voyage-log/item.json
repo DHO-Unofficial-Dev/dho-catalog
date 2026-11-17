@@ -1,0 +1,43 @@
+{
+  "kind": "module",
+  "id": "dev.dho-unofficial.voyage-log",
+  "name": "Logbook",
+  "summary": "항차마다 출발·도착, 항해일수, 지나간 해역을 기록하고 같은 구간의 지난 기록과 비교합니다.",
+  "publisher": {
+    "id": "dev.dho-unofficial",
+    "name": "DHO Unofficial Dev"
+  },
+  "repository": "DHO-Unofficial-Dev/dho-module-logbook",
+  "license": "MIT",
+  "advanced": {
+    "explanation": "service.background는 패널을 닫아 둬도 항차를 기록하는 데 씁니다. files.user는 기록을 CSV로 내보낼 때 사용자가 고른 저장 위치에만 씁니다. 네트워크 권한이 없어 기록은 이 PC 밖으로 나가지 않습니다."
+  },
+  "versions": [
+    {
+      "version": "1.0.1",
+      "releasedAt": "2026-11-17T13:39:22Z",
+      "compatibility": {
+        "minimumManagerVersion": "2.2.0"
+      },
+      "capabilities": [
+        "files.user",
+        "navigation.read",
+        "notifications.show",
+        "service.background",
+        "settings.read",
+        "storage.local"
+      ],
+      "download": {
+        "url": "https://github.com/DHO-Unofficial-Dev/dho-module-logbook/releases/download/v1.0.1/logbook-1.0.1.dho-module",
+        "fileName": "logbook-1.0.1.dho-module",
+        "bytes": 86906,
+        "sha256": "7413c1df3c0f8ccaacdef558f1e2818a2b9ea563ce22239802855662e4cb8690"
+      },
+      "registration": {
+        "toolVersion": "v2.2.0",
+        "runId": "44123437985",
+        "at": "2026-11-17T16:14:30.461Z"
+      }
+    }
+  ]
+}
