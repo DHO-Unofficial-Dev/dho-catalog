@@ -145,6 +145,10 @@ PR을 열면 `pr-lint`가 형식을 안내합니다. 이 결과는 참고용이�
 3. 검사 job이 main의 코드로 실행됩니다. PR commit은 데이터로만 읽고, PR의 workflow·스크립트는 실행하지 않습니다.
    - 새 버전마다 Release 파일을 한 번 받아, 같은 byte로 공개 도구 검사·manifest 대조·크기와 SHA-256 계산을 합니다.
    - 결과(버전·크기·SHA-256·capability)를 실행 요약에 표로 냅니다.
+   - main 대비 추가·제거되는 버전, 바뀌는 `item.json` 필드와 파일, PR 작성자와 `repository` owner를 함께 냅니다.
+     둘이 다르면 경고합니다.
+   - PR이 갈라진 뒤 main의 같은 항목 폴더가 바뀌었으면(예: 그 사이 새 버전 등재) 거부합니다. 등재자는 최신 main으로
+     rebase한 뒤 다시 신청합니다. commit job도 최신 main 기준으로 같은 검사를 다시 합니다.
 4. 소유자가 요약을 확인하고 `catalog-register` 환경을 승인합니다. 이 승인이 고정 승인입니다.
 5. commit job이 검사 결과를 다시 검증하고 같은 주소를 한 번 더 받아 일치를 확인한 뒤, PR의 항목 폴더와 고정 값을
    main에 commit합니다. PR은 그 commit 링크와 함께 닫힙니다.
@@ -170,11 +174,13 @@ workflow가 의도대로 동작하려면 GitHub 설정에서 다음을 해야 �
 1. Actions 일반 설정
    - Workflow permissions: `Read repository contents and packages permissions`(기본 읽기 전용).
    - Fork pull request workflows from outside collaborators: `Require approval for all outside collaborators`.
+   - `Allow GitHub Actions to create and approve pull requests`: 끔.
    - 이 저장소에는 자체 호스팅 runner를 등록하지 않습니다. 모든 workflow는 `ubuntu-latest`만 씁니다.
 2. 저장소 쓰기 권한자는 소유자 한 명으로 둡니다(다른 사람은 PR만 보냅니다).
 3. 등재 전용 GitHub App
    - 조직에 App `<dho-catalog-register>`를 만들고 이 저장소에만 설치합니다.
    - Repository permissions: Contents `Read and write`, Pull requests `Read and write`, Metadata `Read`.
+   - `Workflows` 권한은 주지 않습니다. App 키가 새어도 workflow 파일은 바꿀 수 없게 하기 위해서입니다.
    - 저장소 변수 `CATALOG_APP_CLIENT_ID`에 App Client ID를 넣습니다.
 4. Environment `catalog-register`
    - Required reviewers: 소유자.
@@ -191,6 +197,14 @@ workflow가 의도대로 동작하려면 GitHub 설정에서 다음을 해야 �
 7. Code owners
    - `.github/CODEOWNERS`가 workflow·schema·scripts·`tools.lock.json`·`catalog-base.json`·`items/`를 소유자로 지정합니다.
    - ruleset에서 `Require review from Code Owners`를 켭니다.
+8. Immutable releases(검토)
+   - 켜면 publish된 `catalog-r*` Release의 `catalog.json`을 나중에 바꿀 수 없습니다. 제작자 저장소에 강제하는 설정이 아니라 이 저장소에만 쓰는 설정입니다.
+   - 켜기 전에 `publish`의 `gh release create <태그> catalog.json`(자산을 붙여 바로 공개)이 그대로 동작하는지 확인합니다.
+     1. 이 저장소를 fork하거나 시험용 저장소를 만들어 Immutable releases를 켭니다.
+     2. 시험 태그로 `gh release create catalog-r999999 catalog.json --latest --notes test`를 실행합니다.
+     3. Release가 만들어지고 자산이 붙었는지, 그 뒤 `gh release upload --clobber`로 자산 교체가 거부되는지 확인합니다.
+     4. 시험 Release와 태그는 시험 저장소에서만 만들고 지웁니다(이 저장소의 `catalog-r*` 번호를 쓰지 않습니다).
+   - 자산을 붙이는 단계가 거부되면 켜지 않고, 이 저장소의 태그 ruleset으로 대신합니다.
 
 ## 로컬 검사
 
