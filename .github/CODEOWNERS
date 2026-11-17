@@ -1,0 +1,8 @@
+# 등재 판정·목록 생성에 쓰이는 파일과 항목 전체는 소유자가 검토한다.
+* @cs8minty
+/.github/ @cs8minty
+/schema/ @cs8minty
+/scripts/ @cs8minty
+/tools.lock.json @cs8minty
+/catalog-base.json @cs8minty
+/items/ @cs8minty

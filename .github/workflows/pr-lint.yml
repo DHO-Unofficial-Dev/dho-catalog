@@ -1,0 +1,24 @@
+# 등재 PR 안내용 검사. PR의 workflow로 실행되므로 신뢰 근거가 아니다. 등재 판정은 main의 register.yml이 한다.
+name: pr-lint
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 검사기 테스트
+        run: node --test
+
+      - name: 항목 폴더 검사
+        run: node scripts/lint-items.mjs

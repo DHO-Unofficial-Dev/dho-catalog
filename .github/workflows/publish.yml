@@ -1,0 +1,59 @@
+# 목록 생성·Release. 실행 경로는 main push 하나다(등재 App 토큰 push와 소유자 병합 모두 여기로 온다).
+# item.json의 고정 값을 그대로 옮긴다. archive를 다시 받거나 해시를 다시 계산하지 않고 공개 도구도 실행하지 않는다.
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - items/**
+      - catalog-base.json
+
+concurrency:
+  group: catalog-publish
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: 최신 main checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: 기존 catalog-r 태그
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" 'refs/tags/catalog-r*' | sed -e 's#.*refs/tags/##' -e 's#\^{}$##'
+            gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName'
+          } | sort -u > "$RUNNER_TEMP/tags.txt"
+
+      - name: catalog.json 생성·검증
+        id: build
+        run: node scripts/publish-catalog.mjs --tags-file "$RUNNER_TEMP/tags.txt" --source-commit "$(git rev-parse HEAD)" --out "$RUNNER_TEMP/catalog.json"
+
+      - name: Release
+        if: steps.build.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.build.outputs.tag }}
+          REVISION: ${{ steps.build.outputs.revision }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG" >/dev/null; then
+            echo "태그 $TAG가 이미 있어 Release를 만들지 않는다"
+            exit 1
+          fi
+          gh release create "$TAG" "$RUNNER_TEMP/catalog.json" --repo "$GITHUB_REPOSITORY" \
+            --target "$(git rev-parse HEAD)" --title "Catalog r$REVISION" --latest \
+            --notes "DHO Navigator Catalog 목록 revision $REVISION (source $(git rev-parse HEAD))"
