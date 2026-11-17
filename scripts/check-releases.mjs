@@ -4,6 +4,7 @@
 //
 // 사용: node scripts/check-releases.mjs --head-sha <sha> [--allow-repository-transfer]
 
+import { appendFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { loadRegistrationContext } from './lib/context.mjs';
 import { oneLine, resolveAdvancedCapabilities } from './lib/registration.mjs';
@@ -44,7 +45,10 @@ if (!errors.length) {
 }
 
 if (errors.length) {
-  console.error(`Release 확인 실패:\n- ${errors.map(oneLine).join('\n- ')}`);
+  const text = `Release 확인 실패:\n- ${errors.map(oneLine).join('\n- ')}`;
+  console.error(text);
+  // rebase 필요 같은 문맥 오류도 소유자가 실행 요약에서 바로 보게 한다.
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${text}\n`);
   process.exit(2);
 }
 console.log(`Release 확인: 새 버전 ${context.plan.newVersions.length}개 모두 공개 Release`);

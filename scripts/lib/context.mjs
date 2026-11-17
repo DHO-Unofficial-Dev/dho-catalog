@@ -28,6 +28,7 @@ export function loadRegistrationContext({ headSha, advancedCapabilities, allowRe
     plan = planRegistration({ mainItem, headItem: head.item, allowRepositoryTransfer });
     errors.push(...plan.errors);
   }
-  const changes = head.item ? describeChanges({ mainItem, headItem: head.item, mainFiles, headFiles }) : null;
+  // schema 오류가 있는 item.json은 versions 모양을 믿을 수 없으므로 변경 요약을 만들지 않는다.
+  const changes = head.item && !head.errors.length ? describeChanges({ mainItem, headItem: head.item, mainFiles, headFiles }) : null;
   return { scope, headFiles, head, mainItem, plan, changes, errors };
 }
