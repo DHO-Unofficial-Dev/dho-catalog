@@ -1,0 +1,35 @@
+{
+  "kind": "module",
+  "id": "dev.dho-unofficial.sea-notice",
+  "name": "Herald",
+  "summary": "새 해역에 들어서면 게임 화면에 해역 이름을 띄우고 진입음을 냅니다. 여름·겨울 전환도 알립니다.",
+  "publisher": {
+    "id": "dev.dho-unofficial",
+    "name": "DHO Unofficial Dev"
+  },
+  "repository": "DHO-Unofficial-Dev/dho-module-herald",
+  "license": "MIT AND CC0-1.0",
+  "advanced": {
+    "explanation": "files.user는 설정 창에서 내 소리 파일(ogg·mp3·wav, 4 MiB·10초 이하)을 가져오고 지울 때만 씁니다. 사용자가 고른 파일만 읽으며 네트워크 권한은 없습니다."
+  },
+  "versions": [
+    {
+      "version": "1.0.1",
+      "releasedAt": "2026-11-17T13:45:26Z",
+      "compatibility": {
+        "minimumManagerVersion": "2.2.0"
+      },
+      "capabilities": [
+        "audio.play",
+        "files.user",
+        "navigation.read",
+        "notifications.show",
+        "storage.local"
+      ],
+      "download": {
+        "url": "https://github.com/DHO-Unofficial-Dev/dho-module-herald/releases/download/v1.0.1/herald-1.0.1.dho-module",
+        "fileName": "herald-1.0.1.dho-module"
+      }
+    }
+  ]
+}
