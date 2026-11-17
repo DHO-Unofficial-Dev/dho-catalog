@@ -48,31 +48,44 @@ jobs:
           persist-credentials: false
 
       - name: PR commit 확인과 가져오기(데이터)
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$PR" =~ ^[1-9][0-9]*$ ]] || { echo "pr 형식이 잘못됐다"; exit 1; }
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "headSha는 40자 소문자 hex여야 한다"; exit 1; }
-          read -r state base head < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '[.state, .base.ref, .head.sha] | @tsv')
+          read -r state base head author < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '[.state, .base.ref, .head.sha, .user.login] | @tsv')
           [ "$state" = open ] || { echo "열린 PR이 아니다"; exit 1; }
           [ "$base" = main ] || { echo "main 대상 PR이 아니다"; exit 1; }
           [ "$head" = "$HEAD_SHA" ] || { echo "PR head가 검토한 commit과 다르다: $head"; exit 1; }
+          [[ "$author" =~ ^[A-Za-z0-9-]{1,39}(\[bot\])?$ ]] || { echo "PR 작성자 형식이 잘못됐다"; exit 1; }
+          echo "author=$author" >> "$GITHUB_OUTPUT"
           git fetch --no-tags origin "+refs/pull/$PR/head:refs/remotes/pr/head"
           [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA" ] || { echo "가져온 PR head가 다르다"; exit 1; }
 
-      - name: 공개 도구 키트(tools.lock.json 고정)
-        run: node scripts/fetch-tools.mjs "$RUNNER_TEMP/tools"
-
-      - name: 받기·검사·고정 값 계산
+      - name: Release 상태 확인(공개, draft·prerelease 아님)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           transfer=()
           if [ "$ALLOW_TRANSFER" = true ]; then transfer=(--allow-repository-transfer); fi
+          node scripts/check-releases.mjs --head-sha "$HEAD_SHA" "${transfer[@]}"
+
+      - name: 공개 도구 키트(tools.lock.json 고정)
+        run: node scripts/fetch-tools.mjs "$RUNNER_TEMP/tools"
+
+      # 공개 도구를 실행하는 step이므로 토큰을 넘기지 않는다.
+      - name: 받기·검사·고정 값 계산
+        env:
+          PR_AUTHOR: ${{ steps.pr.outputs.author }}
+        run: |
+          set -euo pipefail
+          transfer=()
+          if [ "$ALLOW_TRANSFER" = true ]; then transfer=(--allow-repository-transfer); fi
           node scripts/register-inspect.mjs --head-sha "$HEAD_SHA" --tools "$RUNNER_TEMP/tools" \
-            --run-id "$GITHUB_RUN_ID" --out "$RUNNER_TEMP/fixed-values.json" "${transfer[@]}"
+            --run-id "$GITHUB_RUN_ID" --out "$RUNNER_TEMP/fixed-values.json" --pr-author "$PR_AUTHOR" "${transfer[@]}"
 
       - name: 고정 값 artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -119,11 +132,21 @@ jobs:
           set -euo pipefail
           [[ "$PR" =~ ^[1-9][0-9]*$ ]] || exit 1
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
-          read -r state head < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '[.state, .head.sha] | @tsv')
+          read -r state base head < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '[.state, .base.ref, .head.sha] | @tsv')
           [ "$state" = open ] || { echo "열린 PR이 아니다"; exit 1; }
+          [ "$base" = main ] || { echo "main 대상 PR이 아니다"; exit 1; }
           [ "$head" = "$HEAD_SHA" ] || { echo "승인 사이에 PR head가 바뀌었다: $head"; exit 1; }
           git fetch --no-tags origin "+refs/pull/$PR/head:refs/remotes/pr/head"
           [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA" ] || exit 1
+
+      - name: Release 상태 다시 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          transfer=()
+          if [ "$ALLOW_TRANSFER" = true ]; then transfer=(--allow-repository-transfer); fi
+          node scripts/check-releases.mjs --head-sha "$HEAD_SHA" "${transfer[@]}"
 
       - name: 고정 값 artifact 받기
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

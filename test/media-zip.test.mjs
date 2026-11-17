@@ -77,4 +77,14 @@ test('ZIP 읽기: stored·deflate, 경로 탈출·중복 거부', () => {
   assert.throws(() => readZip(makeZip({ '/abs': 'x' })), /허용하지 않는 경로/);
   assert.throws(() => readZip(makeZip({ 'a\\b': 'x' })), /허용하지 않는 경로/);
   assert.throws(() => readZip(Buffer.from('not a zip at all, definitely not')), /끝 레코드/);
+  assert.throws(() => readZip(makeZip({ 'manifest.json': '{}', 'MANIFEST.JSON': '{}' })), /대소문자 무시/);
+  assert.throws(() => readZip(makeZip({ 'a/File.txt': 'x', 'a/file.txt': 'y' })), /대소문자 무시/);
+});
+
+test('ZIP 읽기: 로컬 헤더 이름이 중앙 디렉터리와 다르면 거부한다', () => {
+  const zip = makeZip({ 'manifest.json': '{"a":1}' });
+  // 로컬 헤더(offset 30)의 이름 첫 글자를 바꾼다. 중앙 디렉터리 이름은 그대로다.
+  const forged = Buffer.from(zip);
+  forged[30] = 'M'.charCodeAt(0);
+  assert.throws(() => readZip(forged), /로컬 헤더 이름/);
 });

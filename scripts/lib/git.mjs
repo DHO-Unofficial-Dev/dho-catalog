@@ -12,11 +12,19 @@ export function assertCommit(sha, options) {
   git(['cat-file', '-e', `${sha}^{commit}`], options);
 }
 
+export function mergeBase(baseRef, headSha, options) {
+  return git(['merge-base', baseRef, headSha], options).trim();
+}
+
 // PR이 main에서 갈라진 뒤 바꾼 경로(삭제 포함).
-export function changedPaths(baseRef, headSha, options) {
-  const mergeBase = git(['merge-base', baseRef, headSha], options).trim();
-  const output = git(['diff', '--name-only', '--no-renames', '-z', mergeBase, headSha], options);
+export function changedPathsSince(base, headSha, options) {
+  const output = git(['diff', '--name-only', '--no-renames', '-z', base, headSha], options);
   return output.split('\0').filter(Boolean);
+}
+
+// PR이 갈라진 뒤 main(HEAD)에서 그 항목 폴더가 바뀌었는지.
+export function folderChangedSince(base, dir, options) {
+  return git(['diff', '--name-only', base, 'HEAD', '--', `${dir}/`], options).trim() !== '';
 }
 
 export function readFolderAtCommit(sha, dir, options) {

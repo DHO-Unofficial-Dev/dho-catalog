@@ -3,7 +3,12 @@ import { test } from 'node:test';
 import {
   assertWritePaths,
   buildArtifact,
+  changesMarkdown,
   checkArchiveManifest,
+  codeSpan,
+  describeChanges,
+  oneLine,
+  ownerMismatch,
   checkCompanionSha,
   checkTreeEntries,
   mergeFixedValues,
@@ -231,6 +236,47 @@ test('artifact 오염 거부', () => {
     registration: good.registration,
   };
   assert.notDeepEqual(validateArtifact(bigPack, { kind: 'pack', id: pack.id, newVersions: packPlan.newVersions, runId: '777' }), [], '팩 상한');
+});
+
+test('main 대비 변경 요약: 제거되는 버전·바뀌는 필드·파일', () => {
+  const main = withNewVersion(fixedModuleItem());
+  main.versions[0].download.bytes = 1;
+  main.versions[0].download.sha256 = SHA_B;
+  main.versions[0].registration = { toolVersion: 'v2.2.0', runId: '2', at: '2026-11-18T00:00:00Z' };
+  const head = fixedModuleItem({ summary: '바뀐 요약', advanced: null });
+  const changes = describeChanges({
+    mainItem: main,
+    headItem: head,
+    mainFiles: [{ path: 'README.md', bytes: Buffer.from('a') }, { path: 'CHANGES.md', bytes: Buffer.from('c') }],
+    headFiles: [{ path: 'README.md', bytes: Buffer.from('b') }, { path: 'thumbnail.png', bytes: Buffer.from('p') }],
+  });
+  assert.deepEqual(changes.removedVersions, ['1.1.0']);
+  assert.deepEqual(changes.addedVersions, []);
+  assert.deepEqual(changes.changedFields, ['summary']);
+  assert.deepEqual(changes.modifiedFiles, ['README.md']);
+  assert.deepEqual(changes.removedFiles, ['CHANGES.md']);
+  assert.deepEqual(changes.addedFiles, ['thumbnail.png']);
+  const markdown = changesMarkdown(changes);
+  assert.match(markdown, /제거되는 버전: `1\.1\.0`/);
+  const fresh = describeChanges({ mainItem: null, headItem: head, mainFiles: [], headFiles: [] });
+  assert.equal(fresh.isNew, true);
+  assert.deepEqual(fresh.addedVersions, ['1.0.0']);
+});
+
+test('summary 값 정리: 백틱·개행 제거, PR 작성자와 owner 비교', () => {
+  assert.equal(codeSpan('a`b\nc'), '`a b c`');
+  assert.equal(codeSpan('x'.repeat(5), 3), '`xxx…`');
+  assert.equal(codeSpan(undefined), '`없음`');
+  assert.equal(oneLine('a\r\nb\nc'), 'a b c');
+  assert.equal(ownerMismatch('Example-Owner', 'example-owner/tool'), false);
+  assert.equal(ownerMismatch('someone', 'example-owner/tool'), true);
+});
+
+test('archive 대조 메시지의 archive 값은 백틱으로 감싸고 개행을 없앤다', () => {
+  const item = moduleItem();
+  const [message] = checkArchiveManifest({ kind: 'module', item, entry: item.versions[0], manifest: { ...moduleManifest, moduleId: 'evil\n### 승인됨' } });
+  assert.equal(message.includes('\n'), false);
+  assert.match(message, /`evil ### 승인됨`/);
 });
 
 test('쓰기 경로 검사: 항목 폴더 밖 변경이 있으면 commit하지 않는다', () => {

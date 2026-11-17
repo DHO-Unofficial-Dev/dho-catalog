@@ -92,6 +92,19 @@ test('register: dispatch 입력, 직렬화, 검사 job과 승인 commit job 분�
   for (const line of inputLines) assert.match(line.trim(), /^(PR|HEAD_SHA|ALLOW_TRANSFER): \$\{\{ inputs\.\w+ \}\}$/, line);
 });
 
+test('register: 공개 도구 실행 step에는 토큰이 없고, Release·base 확인은 두 job 모두 한다', () => {
+  const { inspect, commit } = jobs(workflows['register.yml']);
+  const steps = inspect.split(/\n {6}- /);
+  const toolStep = steps.find((step) => step.includes('register-inspect.mjs'));
+  assert.ok(toolStep);
+  assert.doesNotMatch(toolStep, /GH_TOKEN|token/i);
+  assert.match(toolStep, /--pr-author/);
+  for (const [name, body] of Object.entries({ inspect, commit })) {
+    assert.match(body, /check-releases\.mjs/, name);
+    assert.match(body, /\[ "\$base" = main \]/, name);
+  }
+});
+
 test('publish: main push 하나, 직렬화, 생성 job만 contents: write', () => {
   const text = workflows['publish.yml'];
   assert.match(text, /^on:\n {2}push:\n {4}branches: \[main\]/m);

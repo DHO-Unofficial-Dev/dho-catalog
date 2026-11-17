@@ -1,28 +1,30 @@
 #!/usr/bin/env node
 // register.yml 검사 job. PR commit의 항목 폴더를 데이터로 읽고, 새 버전마다 Release 자산을 한 번 받아
 // 같은 byte로 공개 도구 검사·manifest 대조·해시 계산을 한다. 출력은 고정 값 artifact와 job summary뿐이다.
+// 이 step에는 토큰을 넘기지 않는다(Release 상태 확인은 check-releases.mjs가 따로 한다).
 //
 // 사용: node scripts/register-inspect.mjs --head-sha <sha> --tools <키트 폴더> --run-id <id> --out <artifact.json>
-//       [--allow-repository-transfer]
+//       --pr-author <login> [--allow-repository-transfer]
 
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { assessItemFolder } from './lib/catalog.mjs';
+import { loadRegistrationContext } from './lib/context.mjs';
 import { downloadReleaseAsset } from './lib/download.mjs';
-import { assertCommit, changedPaths, readFolderAtCommit } from './lib/git.mjs';
 import { parseStrictJson } from './lib/json-strict.mjs';
 import { sha256Hex } from './lib/media.mjs';
 import {
   buildArtifact,
+  changesMarkdown,
   checkArchiveManifest,
   checkCompanionSha,
+  codeSpan,
+  oneLine,
+  ownerMismatch,
   parseToolResult,
-  planRegistration,
   resolveAdvancedCapabilities,
-  scopeFromChangedPaths,
 } from './lib/registration.mjs';
 import { readJsonFile } from './lib/repo.mjs';
 import { LIMITS } from './lib/rules.mjs';
@@ -34,13 +36,15 @@ const { values } = parseArgs({
     tools: { type: 'string' },
     'run-id': { type: 'string' },
     out: { type: 'string' },
+    'pr-author': { type: 'string' },
     'allow-repository-transfer': { type: 'boolean', default: false },
   },
 });
 const headSha = values['head-sha'];
 const runId = values['run-id'];
-if (!headSha || !values.tools || !runId || !values.out) {
-  console.error('필수 인수: --head-sha --tools --run-id --out');
+const prAuthor = values['pr-author'];
+if (!headSha || !values.tools || !runId || !values.out || !prAuthor) {
+  console.error('필수 인수: --head-sha --tools --run-id --out --pr-author');
   process.exit(1);
 }
 
@@ -49,7 +53,7 @@ const summary = (text) => {
   console.log(text);
 };
 const fail = (messages) => {
-  summary(`### 등재 검사 실패\n\n${messages.map((message) => `- ${message}`).join('\n')}`);
+  summary(`### 등재 검사 실패\n\n${messages.map((message) => `- ${oneLine(message)}`).join('\n')}`);
   process.exit(2);
 };
 
@@ -58,28 +62,12 @@ const kitPolicyPath = join(values.tools, 'module', 'policy', 'module-policy-v1.j
 const kitPolicy = existsSync(kitPolicyPath) ? parseStrictJson(readFileSync(kitPolicyPath), { maxDepth: 32 }) : null;
 const advancedCapabilities = resolveAdvancedCapabilities(lock, kitPolicy);
 
-// 1. 범위
-assertCommit(headSha);
-const scope = scopeFromChangedPaths(changedPaths('HEAD', headSha));
-
-// 항목 폴더는 PR commit에서 데이터로만 읽는다.
-const headFiles = readFolderAtCommit(headSha, scope.dir);
-const head = assessItemFolder({ kind: scope.kind, id: scope.id, files: headFiles }, { advancedCapabilities });
-if (head.errors.length) fail(head.errors);
-for (const warning of head.warnings) summary(`- 경고: ${warning}`);
-
-// 2. 소유 잠금: main에 이미 있는 item.json
-const mainItemPath = join(scope.dir, 'item.json');
-const mainItem = existsSync(mainItemPath) ? readJsonFile(mainItemPath) : null;
-const plan = planRegistration({ mainItem, headItem: head.item, allowRepositoryTransfer: values['allow-repository-transfer'] });
-if (plan.errors.length) fail(plan.errors);
-
-const githubApi = async (path) => {
-  const headers = { accept: 'application/vnd.github+json', 'user-agent': 'dho-catalog-register' };
-  if (process.env.GH_TOKEN) headers.authorization = `Bearer ${process.env.GH_TOKEN}`;
-  const response = await fetch(`https://api.github.com${path}`, { headers });
-  return { status: response.status, body: response.status === 200 ? await response.json() : null };
-};
+// 1·2. 범위, main 대비 갱신 여부, 소유 잠금
+const context = loadRegistrationContext({ headSha, advancedCapabilities, allowRepositoryTransfer: values['allow-repository-transfer'] });
+if (context.changes) summary(changesMarkdown(context.changes));
+if (context.errors.length) fail(context.errors);
+const { scope, head, plan } = context;
+for (const warning of head.warnings) summary(`- 경고: ${oneLine(warning)}`);
 
 const workDir = mkdtempSync(join(tmpdir(), 'catalog-register-'));
 const results = [];
@@ -87,18 +75,6 @@ const errors = [];
 try {
   for (const entry of plan.newVersions) {
     const where = `${entry.version}`;
-    // Release 상태: 공개, draft·prerelease 아님
-    const tag = /\/releases\/download\/([^/]+)\//.exec(entry.download.url)[1];
-    const release = await githubApi(`/repos/${head.item.repository}/releases/tags/${encodeURIComponent(tag)}`);
-    if (release.status !== 200) {
-      errors.push(`${where}: 공개 Release ${tag}를 찾을 수 없다`);
-      continue;
-    }
-    if (release.body.draft || release.body.prerelease) {
-      errors.push(`${where}: draft·prerelease Release는 등재할 수 없다`);
-      continue;
-    }
-
     // 3. 한 번 받기. 아래 검사는 모두 이 byte로 한다.
     const maxBytes = scope.kind === 'pack' ? LIMITS.packArchiveBytes : LIMITS.moduleArchiveBytes;
     const { bytes } = await downloadReleaseAsset(entry.download.url, { maxBytes });
@@ -112,7 +88,6 @@ try {
     writeFileSync(archivePath, bytes);
     const toolPath =
       scope.kind === 'module' ? join(values.tools, 'module', 'tools', 'verify-module.mjs') : join(values.tools, 'pack', 'tools', 'verify-archive.mjs');
-    // 토큰 등 환경 변수를 넘기지 않는다.
     const run = spawnSync(process.execPath, [toolPath, archivePath], {
       encoding: 'utf8',
       timeout: 5 * 60 * 1000,
@@ -123,7 +98,7 @@ try {
     const tool = parseToolResult(run.stdout ?? '', run.status);
     if (!tool.valid) {
       const detail = parseToolResult(run.stderr ?? '', 0).result ?? { exit: run.status, error: run.error?.message };
-      errors.push(`${where}: 공개 도구 검사 실패 ${JSON.stringify(detail).slice(0, 300)}`);
+      errors.push(`${where}: 공개 도구 검사 실패 ${codeSpan(JSON.stringify(detail), 300)}`);
       continue;
     }
 
@@ -134,7 +109,7 @@ try {
       zip = readZip(bytes);
       manifest = parseStrictJson(zip.read('manifest.json') ?? Buffer.alloc(0), { maxDepth: 64 });
     } catch (error) {
-      errors.push(`${where}: archive manifest를 읽을 수 없다: ${error.message}`);
+      errors.push(`${where}: archive manifest를 읽을 수 없다: ${codeSpan(error.message)}`);
       continue;
     }
     const mismatch = checkArchiveManifest({ kind: scope.kind, item: head.item, entry, manifest, readArchiveFile: (name) => zip.read(name) });
@@ -156,11 +131,20 @@ const artifact = buildArtifact({
 });
 writeFileSync(values.out, `${JSON.stringify(artifact, null, 2)}\n`);
 
-summary(`### 등재 검사 통과: ${scope.kind} \`${scope.id}\`\n`);
-summary(`PR commit \`${headSha}\`, 도구 ${lock.toolVersion}, 실행 ${runId}\n`);
-summary('| 버전 | 크기(byte) | SHA-256 | capabilities |');
-summary('| --- | ---: | --- | --- |');
-for (const result of results) {
-  summary(`| ${result.version} | ${result.bytes} | \`${result.sha256}\` | ${result.capabilities.join(', ') || '(없음)'} |`);
+summary(`\n### 등재 검사 통과: ${scope.kind} ${codeSpan(scope.id)}\n`);
+summary(`- PR commit ${codeSpan(headSha)}, 도구 ${codeSpan(lock.toolVersion)}, 실행 ${codeSpan(runId)}`);
+summary(`- PR 작성자 ${codeSpan(prAuthor)}, repository ${codeSpan(head.item.repository)}`);
+if (ownerMismatch(prAuthor, head.item.repository)) {
+  summary('- **경고: PR 작성자가 repository owner와 다르다. 제작자 본인의 요청인지 확인한다.**');
 }
-summary('\n위 값이 맞으면 commit job의 `catalog-register` 승인으로 고정한다.');
+summary('');
+if (results.length) {
+  summary('| 버전 | 크기(byte) | SHA-256 | capabilities |');
+  summary('| --- | ---: | --- | --- |');
+  for (const result of results) {
+    summary(`| ${codeSpan(result.version)} | ${result.bytes} | ${codeSpan(result.sha256)} | ${codeSpan(result.capabilities.join(', ') || '(없음)', 400)} |`);
+  }
+} else {
+  summary('새로 고정할 버전이 없다(소개 정보·자료만 바뀐다).');
+}
+summary('\n위 값과 main 대비 변경이 맞으면 commit job의 `catalog-register` 승인으로 고정한다.');

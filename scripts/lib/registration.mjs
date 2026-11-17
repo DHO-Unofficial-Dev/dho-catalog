@@ -71,6 +71,67 @@ export function planRegistration({ mainItem, headItem, allowRepositoryTransfer =
   return { errors, newVersions };
 }
 
+// job summary(Markdown)에 넣을 외부 값: 제어 문자·개행·백틱을 공백으로 바꾸고 줄인 뒤 백틱으로 감싼다.
+export function codeSpan(value, maximum = 120) {
+  const text = String(value ?? '없음').replace(/[\u0000-\u001f\u007f-\u009f`]/g, ' ');
+  const cut = [...text].slice(0, maximum).join('');
+  return `\`${cut}${[...text].length > maximum ? '…' : ''}\``;
+}
+
+// summary 한 줄: 개행을 없앤다.
+export function oneLine(text) {
+  return String(text).replace(/[\r\n]+/g, ' ');
+}
+
+// PR 작성자와 repository owner가 다른지(대소문자 무시).
+export function ownerMismatch(prAuthor, repository) {
+  const owner = String(repository).split('/')[0] ?? '';
+  return String(prAuthor).toLowerCase() !== owner.toLowerCase();
+}
+
+// 승인 화면용: main 대비 PR이 바꾸는 것. 버전 추가·제거, item.json 필드, 파일.
+export function describeChanges({ mainItem, headItem, mainFiles, headFiles }) {
+  const mainVersions = (mainItem?.versions ?? []).map((entry) => entry.version);
+  const headVersions = (headItem?.versions ?? []).map((entry) => entry.version);
+  const addedVersions = headVersions.filter((version) => !mainVersions.includes(version));
+  const removedVersions = mainVersions.filter((version) => !headVersions.includes(version));
+  const changedFields = [];
+  if (mainItem) {
+    const keys = new Set([...Object.keys(mainItem), ...Object.keys(headItem ?? {})]);
+    for (const key of [...keys].sort()) {
+      if (key === 'versions') continue;
+      if (canonical(mainItem[key]) !== canonical(headItem?.[key])) changedFields.push(key);
+    }
+    const mainByVersion = new Map(mainItem.versions.map((entry) => [entry.version, entry]));
+    for (const entry of headItem?.versions ?? []) {
+      const before = mainByVersion.get(entry.version);
+      if (!before) continue;
+      for (const key of [...new Set([...Object.keys(before), ...Object.keys(entry)])].sort()) {
+        if (canonical(before[key]) !== canonical(entry[key])) changedFields.push(`versions[${entry.version}].${key}`);
+      }
+    }
+  }
+  const mainMap = new Map(mainFiles.map((file) => [file.path, file.bytes]));
+  const headMap = new Map(headFiles.map((file) => [file.path, file.bytes]));
+  const addedFiles = [...headMap.keys()].filter((path) => !mainMap.has(path)).sort();
+  const removedFiles = [...mainMap.keys()].filter((path) => !headMap.has(path)).sort();
+  const modifiedFiles = [...headMap.keys()].filter((path) => mainMap.has(path) && !Buffer.from(mainMap.get(path)).equals(Buffer.from(headMap.get(path)))).sort();
+  return { isNew: !mainItem, addedVersions, removedVersions, changedFields, addedFiles, removedFiles, modifiedFiles };
+}
+
+export function changesMarkdown(changes) {
+  const list = (values) => (values.length ? values.map((value) => codeSpan(value)).join(', ') : '없음');
+  const lines = ['#### main 대비 변경', ''];
+  lines.push(`- 항목: ${changes.isNew ? '새 항목' : '기존 항목 갱신'}`);
+  lines.push(`- 추가되는 버전: ${list(changes.addedVersions)}`);
+  lines.push(`- **제거되는 버전: ${list(changes.removedVersions)}**`);
+  lines.push(`- 바뀌는 item.json 필드: ${list(changes.changedFields)}`);
+  lines.push(`- 추가 파일: ${list(changes.addedFiles)}`);
+  lines.push(`- 삭제 파일: ${list(changes.removedFiles)}`);
+  lines.push(`- 수정 파일: ${list(changes.modifiedFiles)}`);
+  return lines.join('\n');
+}
+
 // 공개 도구 출력: 통과하면 stdout에 한 줄 JSON(status valid)과 exit 0, 실패하면 stderr에 JSON과 exit 2·1.
 // 다른 줄(경고 등)이 섞여도 status가 있는 마지막 JSON 객체 줄을 결과로 본다.
 export function parseToolResult(stdout, exitCode) {
@@ -98,20 +159,22 @@ function sameOptional(left, right) {
 export function checkArchiveManifest({ kind, item, entry, manifest, readArchiveFile }) {
   const errors = [];
   if (!manifest || typeof manifest !== 'object') return ['archive manifest.json을 읽을 수 없다'];
+  // archive 값은 job summary에 그대로 들어가므로 codeSpan으로 감싼다.
+  const q = codeSpan;
   if (kind === 'module') {
-    if (manifest.moduleId !== item.id) errors.push(`moduleId ${manifest.moduleId} ≠ ${item.id}`);
-    if (manifest.version !== entry.version) errors.push(`version ${manifest.version} ≠ ${entry.version}`);
-    if (manifest.publisher?.id !== item.publisher.id) errors.push(`publisher.id ${manifest.publisher?.id} ≠ ${item.publisher.id}`);
+    if (manifest.moduleId !== item.id) errors.push(`moduleId ${q(manifest.moduleId)} ≠ ${q(item.id)}`);
+    if (manifest.version !== entry.version) errors.push(`version ${q(manifest.version)} ≠ ${q(entry.version)}`);
+    if (manifest.publisher?.id !== item.publisher.id) errors.push(`publisher.id ${q(manifest.publisher?.id)} ≠ ${q(item.publisher.id)}`);
     if (manifest.minimumManagerVersion !== entry.compatibility.minimumManagerVersion) errors.push('minimumManagerVersion이 다르다');
     if (!sameOptional(manifest.maximumManagerVersionExclusive, entry.compatibility.maximumManagerVersionExclusive)) errors.push('maximumManagerVersionExclusive가 다르다');
     const declared = Array.isArray(manifest.capabilities) ? [...new Set(manifest.capabilities)].sort() : null;
-    if (!declared || canonical(declared) !== canonical(entry.capabilities)) errors.push(`capabilities가 archive와 다르다(archive: ${declared?.join(', ') ?? '없음'})`);
+    if (!declared || canonical(declared) !== canonical(entry.capabilities)) errors.push(`capabilities가 archive와 다르다(archive: ${q(declared?.join(', ') ?? '없음')})`);
     return errors;
   }
-  if (manifest.packId !== item.id) errors.push(`packId ${manifest.packId} ≠ ${item.id}`);
-  if (manifest.version !== entry.version) errors.push(`팩 version ${manifest.version} ≠ ${entry.version}`);
+  if (manifest.packId !== item.id) errors.push(`packId ${q(manifest.packId)} ≠ ${q(item.id)}`);
+  if (manifest.version !== entry.version) errors.push(`팩 version ${q(manifest.version)} ≠ ${q(entry.version)}`);
   if (!isSemver(manifest.version)) errors.push('팩 version은 semver여야 한다');
-  if (manifest.publisher?.id !== item.publisher.id) errors.push(`publisher.id ${manifest.publisher?.id} ≠ ${item.publisher.id}`);
+  if (manifest.publisher?.id !== item.publisher.id) errors.push(`publisher.id ${q(manifest.publisher?.id)} ≠ ${q(item.publisher.id)}`);
   if (manifest.formatVersion !== 1) errors.push('팩 formatVersion은 1이어야 한다');
   if (Object.hasOwn(manifest, 'signature')) errors.push('signature 선언이 있는 팩은 등재할 수 없다');
   if (manifest.compatibility?.minimumManagerVersion !== entry.compatibility.minimumManagerVersion) errors.push('minimumManagerVersion이 다르다');
@@ -127,7 +190,7 @@ export function checkArchiveManifest({ kind, item, entry, manifest, readArchiveF
       try {
         data = parseStrictJson(source, { maxDepth: 32 });
       } catch (error) {
-        errors.push(`poiData 원본이 올바른 JSON이 아니다: ${error.message}`);
+        errors.push(`poiData 원본이 올바른 JSON이 아니다: ${codeSpan(error.message)}`);
       }
       if (data && (Object.hasOwn(data, 'coordinateOverrides') || Object.hasOwn(data, 'hiddenPoiIds'))) {
         errors.push('내장 거점 보정·숨김(coordinateOverrides·hiddenPoiIds)이 든 팩은 등재할 수 없다');

@@ -28,6 +28,7 @@ export function readZip(buffer, { maxEntries = 4096, maxEntryBytes = 64 * 1024 *
   if (centralOffset + centralSize > eocd) throw new ZipError('중앙 디렉터리 범위가 잘못됐다');
 
   const entries = new Map();
+  const foldedNames = new Set();
   let cursor = centralOffset;
   for (let index = 0; index < entryCount; index += 1) {
     if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) throw new ZipError('중앙 디렉터리 항목이 잘못됐다');
@@ -44,17 +45,28 @@ export function readZip(buffer, { maxEntries = 4096, maxEntryBytes = 64 * 1024 *
     if (flags & 0x1) throw new ZipError(`암호화된 항목: ${name}`);
     if (compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) throw new ZipError('zip64는 지원하지 않는다');
     if (!isSafeName(name)) throw new ZipError(`허용하지 않는 경로: ${name}`);
-    if (entries.has(name)) throw new ZipError(`중복 경로: ${name}`);
+    // 대소문자만 다른 이름도 파서·파일 시스템마다 해석이 갈리므로 중복으로 본다.
+    const folded = name.toLowerCase();
+    if (foldedNames.has(folded)) throw new ZipError(`중복 경로(대소문자 무시): ${name}`);
+    foldedNames.add(folded);
     if (size > maxEntryBytes) throw new ZipError(`파일이 너무 크다: ${name}`);
     entries.set(name, { name, method, compressedSize, size, localOffset });
+  }
+
+  // 모든 항목의 로컬 헤더를 미리 확인한다. 이름이 중앙 디렉터리와 다르면 파서마다 다른 파일로 읽힐 수 있다.
+  for (const entry of entries.values()) {
+    const offset = entry.localOffset;
+    if (offset + 30 > buffer.length || buffer.readUInt32LE(offset) !== LOCAL_SIGNATURE) throw new ZipError(`로컬 헤더가 잘못됐다: ${entry.name}`);
+    const localNameLength = buffer.readUInt16LE(offset + 26);
+    const localName = buffer.subarray(offset + 30, offset + 30 + localNameLength).toString('utf8');
+    if (localName !== entry.name) throw new ZipError(`로컬 헤더 이름이 중앙 디렉터리와 다르다: ${entry.name}`);
+    entry.dataStart = offset + 30 + localNameLength + buffer.readUInt16LE(offset + 28);
   }
 
   const read = (name) => {
     const entry = entries.get(name);
     if (!entry) return null;
-    const offset = entry.localOffset;
-    if (offset + 30 > buffer.length || buffer.readUInt32LE(offset) !== LOCAL_SIGNATURE) throw new ZipError(`로컬 헤더가 잘못됐다: ${name}`);
-    const dataStart = offset + 30 + buffer.readUInt16LE(offset + 26) + buffer.readUInt16LE(offset + 28);
+    const dataStart = entry.dataStart;
     const data = buffer.subarray(dataStart, dataStart + entry.compressedSize);
     if (data.length !== entry.compressedSize) throw new ZipError(`데이터가 잘렸다: ${name}`);
     let result;

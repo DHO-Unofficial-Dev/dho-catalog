@@ -7,22 +7,15 @@
 // 사용: node scripts/register-commit.mjs --head-sha <sha> --artifact <artifact.json> --run-id <id>
 //       --message-out <파일> [--allow-repository-transfer]
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { assessItemFolder } from './lib/catalog.mjs';
+import { loadRegistrationContext } from './lib/context.mjs';
 import { downloadReleaseAsset } from './lib/download.mjs';
-import { assertCommit, changedPaths, porcelainPaths, readFolderAtCommit } from './lib/git.mjs';
+import { porcelainPaths } from './lib/git.mjs';
 import { parseStrictJson } from './lib/json-strict.mjs';
 import { sha256Hex } from './lib/media.mjs';
-import {
-  assertWritePaths,
-  mergeFixedValues,
-  planRegistration,
-  resolveAdvancedCapabilities,
-  scopeFromChangedPaths,
-  validateArtifact,
-} from './lib/registration.mjs';
+import { assertWritePaths, mergeFixedValues, oneLine, resolveAdvancedCapabilities, validateArtifact } from './lib/registration.mjs';
 import { readJsonFile } from './lib/repo.mjs';
 import { LIMITS, validateItemDocument } from './lib/rules.mjs';
 
@@ -42,22 +35,17 @@ if (!headSha || !values.artifact || !runId || !values['message-out']) {
   process.exit(1);
 }
 const fail = (messages) => {
-  console.error(`commit하지 않는다:\n- ${messages.join('\n- ')}`);
+  console.error(`commit하지 않는다:\n- ${messages.map(oneLine).join('\n- ')}`);
   process.exit(2);
 };
 
 const lock = readJsonFile('tools.lock.json');
 const advancedCapabilities = resolveAdvancedCapabilities(lock, null);
 
-assertCommit(headSha);
-const scope = scopeFromChangedPaths(changedPaths('HEAD', headSha));
-const headFiles = readFolderAtCommit(headSha, scope.dir);
-const head = assessItemFolder({ kind: scope.kind, id: scope.id, files: headFiles }, { advancedCapabilities });
-if (head.errors.length) fail(head.errors);
-const mainItemPath = join(scope.dir, 'item.json');
-const mainItem = existsSync(mainItemPath) ? readJsonFile(mainItemPath) : null;
-const plan = planRegistration({ mainItem, headItem: head.item, allowRepositoryTransfer: values['allow-repository-transfer'] });
-if (plan.errors.length) fail(plan.errors);
+// 최신 main 기준으로 다시 판정한다. 승인 사이 main의 같은 항목이 바뀌었으면 여기서 멈춘다.
+const context = loadRegistrationContext({ headSha, advancedCapabilities, allowRepositoryTransfer: values['allow-repository-transfer'] });
+if (context.errors.length) fail(context.errors);
+const { scope, headFiles, head, plan } = context;
 
 let artifact;
 try {
